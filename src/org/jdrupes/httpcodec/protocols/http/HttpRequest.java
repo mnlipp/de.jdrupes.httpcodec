@@ -1,6 +1,6 @@
 /*
  * This file is part of the JDrupes non-blocking HTTP Codec
- * Copyright (C) 2016, 2017  Michael N. Lipp
+ * Copyright (C) 2016, 2024  Michael N. Lipp
  *
  * This program is free software; you can redistribute it and/or modify it 
  * under the terms of the GNU Lesser General Public License as published
@@ -20,7 +20,9 @@ package org.jdrupes.httpcodec.protocols.http;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -30,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.StringTokenizer;
+import java.util.function.Function;
 
 import static org.jdrupes.httpcodec.protocols.http.HttpConstants.*;
 
@@ -38,6 +41,7 @@ import static org.jdrupes.httpcodec.protocols.http.HttpConstants.*;
  */
 public class HttpRequest extends HttpMessageHeader {
 
+    /** The Constant ASTERISK_REQUEST. */
     public static final URI ASTERISK_REQUEST
         = URI.create("http://127.0.0.1/");
 
@@ -134,6 +138,8 @@ public class HttpRequest extends HttpMessageHeader {
     }
 
     /**
+     * Host.
+     *
      * @return the host
      */
     public String host() {
@@ -141,6 +147,8 @@ public class HttpRequest extends HttpMessageHeader {
     }
 
     /**
+     * Port.
+     *
      * @return the port
      */
     public int port() {
@@ -226,6 +234,78 @@ public class HttpRequest extends HttpMessageHeader {
         }
     }
 
+    /**
+     * Updates the query part of an URI.
+     *
+     * @param uri the uri
+     * @param query the query in raw form, i.e. as it should appear
+     * in the request
+     * @return the new URI
+     */
+    public static URI replaceQuery(URI uri, String query) {
+        try {
+            // Replace query, working around JDK query encoding problem
+            return new URI(new URI(uri.getScheme(),
+                uri.getAuthority(), uri.getPath(), null, null).toString()
+                + (query.isBlank() ? "" : ("?" + query))
+                + (uri.getRawFragment() != null
+                    ? ("#" + uri.getRawFragment())
+                    : ""));
+        } catch (URISyntaxException e) {
+            // Cannot happen
+            return uri;
+        }
+    }
+
+    /**
+     * Updates the query part of the request URI.
+     *
+     * @param data the data
+     * @param charset the charset to use for encoding keys and values
+     * @return the http request
+     */
+    public HttpRequest setSimpleQueryData(Map<String, String> data,
+            Charset charset) {
+        requestUri
+            = replaceQuery(requestUri, simpleWwwFormUrlencode(data, charset));
+        return this;
+    }
+
+    /**
+     * Updates the query part of the request URI, using UTF-8 to encode
+     * the query keys and values.
+     *
+     * @param data the data
+     * @return the http request
+     */
+    public HttpRequest setSimpleQueryData(Map<String, String> data) {
+        return setSimpleQueryData(data, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Updates the query part of the request URI.
+     *
+     * @param data the data
+     * @param charset the charset to use for encoding keys and values
+     * @return the http request
+     */
+    public HttpRequest setQueryData(Map<String, List<String>> data,
+            Charset charset) {
+        requestUri = replaceQuery(requestUri, wwwFormUrlencode(data, charset));
+        return this;
+    }
+
+    /**
+     * Updates the query part of the request URI, using UTF-8 to encode
+     * the query keys and values.
+     *
+     * @param data the data
+     * @return the http request
+     */
+    public HttpRequest setQueryData(Map<String, List<String>> data) {
+        return setQueryData(data, StandardCharsets.UTF_8);
+    }
+
     /*
      * (non-Javadoc)
      * 
@@ -251,6 +331,64 @@ public class HttpRequest extends HttpMessageHeader {
         }
         builder.append("]");
         return builder.toString();
+    }
+
+    /**
+     * Www-form-urlencodes the given data, using the given charset
+     * to encode keys and values.
+     *
+     * @param data the data
+     * @param charset the charset to use for encoding keys and values
+     * @return the string
+     */
+    public static String simpleWwwFormUrlencode(Map<String, String> data,
+            Charset charset) {
+        return data.entrySet().stream()
+            .map(e -> URLEncoder.encode(e.getKey(), charset)
+                + "=" + URLEncoder.encode(e.getValue(), charset))
+            .reduce((p1, p2) -> p1 + "&" + p2).orElse("");
+    }
+
+    /**
+     * Www-form-urlencodes the given data, using UTF-8
+     * to encode keys and values.
+     *
+     * @param data the data
+     * @param charset the charset
+     * @return the string
+     */
+    public static String simpleWwwFormUrlencode(Map<String, String> data) {
+        return simpleWwwFormUrlencode(data, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Www-form-urlencodes the given data, using the given charset
+     * to encode keys and values.
+     *
+     * @param data the data
+     * @param charset the charset to use for encoding keys and values
+     * @return the string
+     */
+    public static String wwwFormUrlencode(Map<String, List<String>> data,
+            Charset charset) {
+        return data.entrySet().stream()
+            .map(e -> e.getValue().stream()
+                .map(v -> URLEncoder.encode(e.getKey(), charset) + "="
+                    + URLEncoder.encode(v, charset)))
+            .flatMap(Function.identity())
+            .reduce((p1, p2) -> p1 + "&" + p2).orElse("");
+    }
+
+    /**
+     * Www-form-urlencodes the given data, using UTF-8
+     * to encode keys and values.
+     *
+     * @param data the data
+     * @param charset the charset
+     * @return the string
+     */
+    public static String wwwFormUrlencode(Map<String, List<String>> data) {
+        return wwwFormUrlencode(data, StandardCharsets.UTF_8);
     }
 
 }
